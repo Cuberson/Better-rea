@@ -16,6 +16,7 @@ import {
   presentAdvertisedInputSchema,
   type CompactInputSchemaPresentation,
 } from "./contracts/compactInputSchema.js";
+import { COMPACT_INPUT_SCHEMA_BUDGET_BYTES } from "./config/mcpInputSchemaProfile.js";
 import type { McpOutputSchemaProfile } from "./config/mcpOutputSchemaProfile.js";
 import { RECORDED_CATALOG_DIGESTS } from "./recordedCatalogDigests.js";
 
@@ -114,11 +115,18 @@ export const createCatalogIdentity = (
       ? undefined
       : { budgetBytes: compactPresentation.budgetBytes };
   // Building and canonicalizing every advertised schema dominates doctor and
-  // server startup, so the compiled runtime records the default digests once.
+  // server startup, so the compiled runtime records the digests of every
+  // supported profile combination once; custom presentations still compute.
+  const recordedInputProfile =
+    compactPresentation === undefined
+      ? "full"
+      : compactPresentation.budgetBytes === COMPACT_INPUT_SCHEMA_BUDGET_BYTES
+        ? "compact"
+        : undefined;
   let catalogDigests: CatalogDigests | undefined =
-    selectedPresentation === undefined && outputSchemaProfile === "full"
-      ? RECORDED_CATALOG_DIGESTS
-      : undefined;
+    recordedInputProfile === undefined
+      ? undefined
+      : RECORDED_CATALOG_DIGESTS?.[recordedInputProfile]?.[outputSchemaProfile];
   return {
     counts: {
       cli_commands: CLI_COMMAND_NAMES.length,
