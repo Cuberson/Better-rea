@@ -69,10 +69,14 @@ if (!(await compiledRuntimeExists(runtimeFiles))) {
   writeStdout(result.output);
   process.exitCode = result.exitCode;
 } else {
-  const { cliConfigurationError, createCli } =
-    await import("../dist/cli-runtime/cli.js");
-  const { createCliResultOutput } =
-    await import("../dist/cli-runtime/cliResultOutput.js");
+  await runCliCommand(args);
+}
+
+/**
+ * Serve one non-MCP command with the complete registered catalog, or answer
+ * the metadata-only version report without loading the runtime graph.
+ */
+async function runCliCommand(arguments_) {
   const {
     normalizeCliArguments,
     renderCliOutputArgumentError,
@@ -80,8 +84,26 @@ if (!(await compiledRuntimeExists(runtimeFiles))) {
     validateCliOutputArguments,
   } = await import("../dist/cli-runtime/cliOutput.js");
   guardClosedStdout();
-  const cliArgs = normalizeCliArguments(args);
+  const cliArgs = normalizeCliArguments(arguments_);
   const outputArguments = validateCliOutputArguments(cliArgs);
+  // `--version` reports release metadata and costs nothing, but loading the
+  // complete command catalog takes over a second. Answer it without importing
+  // the runtime, byte-identical to Incur's version line, while a configured
+  // REA_LOG_LEVEL keeps its full validation path.
+  if (
+    process.env.REA_LOG_LEVEL === undefined &&
+    outputArguments.ok &&
+    cliArgs.length === 1 &&
+    cliArgs[0] === "--version"
+  ) {
+    process.exitCode = 0;
+    writeStdout(`${packageJson.version}\n`);
+    return;
+  }
+  const { cliConfigurationError, createCli } =
+    await import("../dist/cli-runtime/cli.js");
+  const { createCliResultOutput } =
+    await import("../dist/cli-runtime/cliResultOutput.js");
   const configurationError = cliConfigurationError(process.env);
   if (configurationError !== undefined) {
     process.stderr.write(`${configurationError}\n`);
