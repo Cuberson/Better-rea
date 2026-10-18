@@ -137,3 +137,78 @@ describe("executable dispatcher", () => {
     },
   );
 });
+
+describe("executable dispatcher version report", () => {
+  workspaceCliTest(
+    "answers the version report without loading the command runtime",
+    async ({ processes, workspace }) => {
+      const scripts = await workspace.mkdir("scripts");
+      await workspace.mkdir("dist/cli-runtime");
+      await Promise.all([
+        copyFile("scripts/rea.mjs", join(scripts, "rea.mjs")),
+        workspace.write(
+          "package.json",
+          JSON.stringify({ type: "module", version: "1.0.0" }),
+        ),
+        // Importing the runtime fails the test: only release metadata may load.
+        workspace.write(
+          "dist/cli-runtime/cli.js",
+          'throw new Error("cli runtime must not load for --version");\n',
+        ),
+        workspace.write(
+          "dist/cli-runtime/cliOutput.js",
+          "export const normalizeCliArguments = (args) => args; export const validateCliOutputArguments = () => ({ ok: true }); export const renderCliOutputArgumentError = () => ''; export const renderEmptyFilteredCliOutput = () => undefined;\n",
+        ),
+        workspace.write(
+          "dist/cli-runtime/cliResultOutput.js",
+          "export const createCliResultOutput = () => undefined;\n",
+        ),
+      ]);
+      const result = await processes.run(
+        process.execPath,
+        [join(scripts, "rea.mjs"), "--version"],
+        { cwd: workspace.root, env: { PATH: process.env.PATH ?? "" } },
+      );
+      expect(result).toMatchObject({ exitCode: 0, stdout: "1.0.0\n" });
+    },
+  );
+
+  workspaceCliTest(
+    "keeps a configured REA_LOG_LEVEL on the full validation path for --version",
+    async ({ processes, workspace }) => {
+      const scripts = await workspace.mkdir("scripts");
+      await workspace.mkdir("dist/cli-runtime");
+      await Promise.all([
+        copyFile("scripts/rea.mjs", join(scripts, "rea.mjs")),
+        workspace.write(
+          "package.json",
+          JSON.stringify({ type: "module", version: "1.0.0" }),
+        ),
+        workspace.write(
+          "dist/cli-runtime/cli.js",
+          'export const cliConfigurationError = (environment) => environment.REA_LOG_LEVEL === undefined ? undefined : "REA configuration is invalid: REA_LOG_LEVEL: Invalid option: expected one of \\"trace\\"."; export const createCli = () => ({ serve: () => { throw new Error("version must not reach the command runtime"); } });\n',
+        ),
+        workspace.write(
+          "dist/cli-runtime/cliOutput.js",
+          "export const normalizeCliArguments = (args) => args; export const validateCliOutputArguments = () => ({ ok: true }); export const renderCliOutputArgumentError = () => ''; export const renderEmptyFilteredCliOutput = () => undefined;\n",
+        ),
+        workspace.write(
+          "dist/cli-runtime/cliResultOutput.js",
+          "export const createCliResultOutput = () => undefined;\n",
+        ),
+      ]);
+      const result = await processes.run(
+        process.execPath,
+        [join(scripts, "rea.mjs"), "--version"],
+        {
+          cwd: workspace.root,
+          env: { PATH: process.env.PATH ?? "", REA_LOG_LEVEL: "bogus" },
+        },
+      );
+      expect(result).toMatchObject({ exitCode: 1, stdout: "" });
+      expect(result.stderr).toContain(
+        "REA configuration is invalid: REA_LOG_LEVEL",
+      );
+    },
+  );
+});
